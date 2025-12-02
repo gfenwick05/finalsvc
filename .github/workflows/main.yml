@@ -1,0 +1,43 @@
+from flask import Flask, request, jsonify
+import logging
+import os
+from recommender import BookRecommender
+from config import load_config
+
+cfg = load_config()
+
+logging.basicConfig(
+    level=cfg['LOG_LEVEL'],
+    format='%(asctime)s %(levelname)s %(name)s %(message)s'
+)
+logger = logging.getLogger("booksvc")
+
+app = Flask(__name__)
+app.config.update(cfg)
+
+recommender = BookRecommender(data_path=cfg['BOOKS_CSV_PATH'])
+
+@app.route("/health")
+def health():
+    return jsonify(status="ok")
+
+@app.route("/recommend")
+def recommend():
+    title = request.args.get("title", "")
+    top_k = int(request.args.get("top_k", 5))
+    if not title:
+        return jsonify(error="missing 'title' parameter"), 400
+    try:
+        recs = recommender.recommend(title, top_k=top_k)
+        logger.info("recommend", extra={"title": title, "count": len(recs)})
+        return jsonify({"query": title, "recommendations": recs})
+    except ValueError as e:
+        return jsonify(error=str(e)), 404
+    except Exception:
+        logger.exception("Unexpected error")
+        return jsonify(error="internal server error"), 500
+
+if __name__ == "__main__":
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host=host, port=port)
